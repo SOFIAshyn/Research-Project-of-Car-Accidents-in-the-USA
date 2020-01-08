@@ -1,0 +1,496 @@
+---
+title: "Cross Sectional and Longitudinal Research Project of Car Accidents in the USA"
+
+output: html_notebook
+---
+**The aim of the project** to find out what is the situation of car accidents in the US, which factors can cause problems on road. We also would like to find out some correlations of data and data distributions. To sum iy up, we would take a look at the data over years.
+
+Project is based on American National Highway Traffic Safety Administration datasets, to be more clear FARS - Fatality Analisys Reporting System: (https://www.nhtsa.gov/research-data/fatality-analysis-reporting-system-fars). Here is an explanation of the data: (https://data.nber.org/fars/ftp.nhtsa.dot.gov/fars/FARS-DOC/Analytical%20User%20Guide/USERGUIDE-2015.pdf).
+
+**Read data**
+
+```{r}
+df <- read.csv("./ACCIDENT.csv", header = TRUE)
+
+df
+```
+
+**Install and load the required packages**
+
+```{r}
+require("plotly")
+# install.packages("plotly")
+library(plotly)
+require("ggplot2")
+library("ggplot2")
+require("plyr")
+library("plyr")
+require(BSDA)
+library(BSDA)
+# install.packages("fitdistrplus")
+require("fitdistplus")
+library("fitdistrplus")
+```
+
+We can find out an average number of cars that were involved in an accident. But also I would like to find out if all the cars that are registered were in action.
+
+```{r}
+# Draw a plot of cars involved in an accident.
+# Details:
+# VE_TOTAL - This data element is the number of contact motor vehicles that the officer reported as a unit involved in the crash.
+p_total <- ggplot(data=df, aes(x=df$VE_TOTAL)) +
+       geom_histogram(aes(y =..density.., fill=..count..),
+       breaks=seq(0, 7, by = 1)) +
+       labs(title="Histogram for a number of cars involved in an accident") +
+       geom_density(col="brown4", adjust=7) +
+       labs(x="Number of cars in the accident", y="Count of cars") +
+       xlim(0, 7)
+
+p_total <- suppressWarnings(ggplotly(p = p_total))
+p_total
+```
+```{r}
+# Draw a plot of cars involved in an accident, but without innocent cars around.
+# Details:
+# VE_FORMS - This data element is a count of the number of vehicles in-transport involved in the crash. Legally parked vehicles are not included.
+p_forms <- ggplot(data=df, aes(x=df$VE_FORMS)) +
+       geom_histogram(aes(y =..density.., fill=..count..),
+       breaks=seq(0, 7, by = 1)) +
+       labs(title="Histogram for a number of cars involved in an accident without legally parked vehicles") +
+       geom_density(col="brown4", adjust=7) +
+       labs(x="Number of cars in the accident", y="Count of cars") +
+       xlim(0, 7)
+
+p_forms <- suppressWarnings(ggplotly(p = p_forms))
+p_forms
+```
+
+```{r}
+# Let us compare pdf of both data samples
+p_form <- df$VE_FORMS
+p_total <- df$VE_TOTAL
+
+form <- data.frame(length = p_form)
+total <- data.frame(length = p_total)
+
+# Combine two data frames into one
+# Create one more column in each data frame
+form$p <- 'Cars involved in an accident without legally parked vehicles'
+total$p <- 'Cars involved in an accident'
+
+#and combine into your new data frame vegLengths
+pLengths <- rbind(form, total)
+
+#now make your lovely plot
+p <- ggplot(pLengths, aes(length, fill = p)) +
+  geom_density(alpha = 0.3, adjust=7) +
+  labs(title="Densities of data of cars involved in an accident") +
+  xlim(0, 20)
+
+p <- suppressWarnings(ggplotly(p))
+
+p
+```
+What is quite predictible - the number of cars involved in a crash is usually one or two, more rarely three or more.\n
+From the plot of comparison two data samples above we can see that car accidents involving only one car increases and what follows, other car accidents decrease, but not that significantly.\n
+I would prefere to use data sample called "VE_FORMS" - to be more clear with causes of accidents.\n
+
+So we have the most often accident involving with one car. Let us find out why it works this way.\n
+
+I would assume that it is beacuse of a luck of driver's attention, so let us analyse:\n
+    1. If a driver was sober
+    2. If there were some conditions around
+    3. If it was a late night
+
+## Hypothesis testing
+
+**First hypothesis**\n
+The first hypothesis, I would say it is because a driver was drunk:
+```{r}
+# Nuber of cars involved in an accident
+accidents <- df$VE_FORMS
+# Nuber of drunk people inside cars
+drunk_dr <- df$DRUNK_DR
+
+plot(x = drunk_dr, y = accidents, pch=16, col = "#0DDF96", main = "Correlation between cars in an accident and drunk people", xlab = "Drunk drivers and people inside car", ylab = "Number of cars in an accident")
+```
+We can see that the half of drivers are in accident being sober - all the point on the position 0, so the other part describes drunk drivers. \n
+So we would say that accually, it doesn't metter if a driver was sober or drunk in the US, the distribution of car accidents are almost the same.\n
+To prove it, we would devide our data into two pars - sober drivers' car accidents and drunk drivers' car accidents.\n
+For both samples the variance is the same as we use the same data, so the scale will be the same, but we devide the data into two parts.\n
+```{r}
+# Let us clean up the data, to select only drunk drivers
+only_drunk_df <- df[df$DRUNK_DR > 0,]
+only_drunk_df <- only_drunk_df[only_drunk_df$VE_FORMS > 0,]
+only_sober_df <- df[df$DRUNK_DR == 0,]
+only_sober_df <- only_sober_df[only_sober_df$VE_FORMS > 0,]
+
+accident_drunk_people <- only_drunk_df$VE_FORMS
+accident_sober_people <- only_sober_df$VE_FORMS
+
+
+# Find out the varience
+accidentsVar <- sd(accidents, na.rm = TRUE) * sd(accidents, na.rm = TRUE)
+```
+Let us $\mu_1$ is a mean of thev sample of accidents that happened with drunk drivers, $\mu_2$ is a mean of the sample of accidents that happened with sober drivers.\n
+The variance will be the same as both samples combined variance.
+$$
+  H_0\,: \mu_1 =\mu_2 \quad \textrm{vs} \quad H_1\,: \mu_1 \neq \mu_2;\,\, \sigma^2_1 = \sigma^2_2 = 0.60
+$$
+To prove this type of hypothesis we can use z-test, as we already know a variance and want to investigate a mean.
+
+```{r}
+sigma_d_s = sqrt(0.6)
+
+z.test(accident_sober_people, accident_drunk_people, alternative = 'two.sided', sigma.x = sigma_d_s, sigma.y = sigma_d_s, conf.level = 0.95)
+# Calculate value to compare it with the confidence interval
+mu_d_s <- mean(accident_sober_people, na.rm = TRUE) - mean(accident_drunk_people, na.rm = TRUE)
+mu_d_s
+```
+**Solution:**\n
+1. As alpha = 0.05, as p-value = 0.001 > 0.05, we accept $\ H_0$.
+2. As a difference between mean of x and mean of y of the smaples $\delta \mu$ = 0.09, what is not inside conf. interval, we accept $\ H_0$.
+So now, we can certainly say that in the US it is acually does not metter if a driver is drunk or sober, accidents happen with the same distribution, being confidence for $95\%$.
+
+**Second hypothesis**\n
+Let us then check the next hypothesis. What if there were bad weather conditions.
+We have three columns of data "CF1", "CF2", "CF3" - factors related to the crash expressed by the investigating officer. I would clean this data in Python, as we have a lot of 0-es there, I will clean it up to have just a recoreded data.
+We will take a look at the data and decide wether it is worth it, to analyse.
+$$
+    ({14: 723, 19: 395, 20: 350, 23: 338, 22: 125, 28: 91, 15: 82, 3: 64, 18: 53, 26: 51, \\
+    27: 50, 16: 35, 2: 26, 24: 25, 21: 25, 5: 14, 4: 11, 25: 8, 13: 7, 1: 5, 7: 4, 6: 3, 12: 2, 17: 2})
+$$
+This is what I found out. We have:\n
+723 (№14) accidents because of something that came loose from or something that was set in motion by a vehicle.\n
+395 (№19) accidents - Recent Previous Crash Scene Nearby.\n
+350 (№20) - Police-Pursuit-Involved.\n
+125 (№23) - Speed Limit Is a Statutory Limit as Recorded or Was Determined as This State’s “Basic Rule”.\n
+91 (№28) - Backup Due to Regular Congestion.\n
+\n
+Here is enough accidents happened because of some conditions around. What if you are one inside a car you can be focussed enough but if more people inside a car is in accident.\n
+Let us check it out.\n
+```{r}
+# Clean the data up
+persons <- df[df$CF1 != 0,]
+persons <- persons[persons$CF1 != 99,]
+persons <- persons$PERSONS
+
+# Clean the data up
+cf1 <- df[df$CF1 != 0,]
+cf1 <- cf1[cf1$CF1 != 99,]
+cf1 <- cf1$CF1
+
+plot(x = persons, y = cf1, pch=16,
+     col = "#0DDF96",
+     main = "Correlation between number of cars in accident and conditions around",
+     xlab = "Number of cars involved in an accident",
+     ylab = "Conditions around that infuenced an accident")
+```
+When there is just one car involved in an accident actually conditions around really influence the ride, so ussually one car has an accident if there are some conditions around.
+As more cars are in accident, as less the external conditions influence a ride.
+So we will take a sample of just one car involved in an accident and another sample from two to ten cars (all the accidents caused because of conditions around). We will check either they sample mean is the same or no.
+
+$$
+  H_0\,: \mu_1 =\mu_2 \quad \textrm{vs} \quad H_1\,: \mu_1 \neq \mu_2;\,\, \sigma^2_1, \sigma^2_2 \, known
+$$
+
+```{r}
+# Filter data to have just a sample of accidents caused because of any conditions around
+persons <- df[df$CF1 != 0,]
+persons <- persons[persons$CF1 != 99,]
+
+# Choose just one person inside a car
+one_person <- persons[persons$PERSONS == 1,]
+one_person <- one_person$CF1
+
+# Choose from 2 to 10 people inside a car
+from2_people <- persons[persons$PERSONS != 1,]
+from2_people <- from2_people$CF1
+
+#As we can find a sample mean and sample variences, we will use ztest
+z.test(one_person, from2_people, sigma.x = sd(one_person), sigma.y = sd(from2_people), alternative = "two.sided", conf.level = 0.95)
+
+# find difference between means of both samples
+diff <- mean(one_person) - mean(from2_people)
+diff
+```
+**Solution:**\n
+1. As alpha = 0.05, as p-value = 0.14 > 0.05, we accept $\ H_0$.
+2. As a difference between mean of x and mean of y of the smaples $\delta \mu$ = 0.35, what is not inside conf. interval, we accept $\ H_0$.
+As we contradicted one car to nine cars, we will definitely say that it is true that more accidents involving just one car happens because of external conditions.
+
+**Third hypothesis**\n
+The third hypothesis, we will check out if driving late night influences causing accidents somehow. 
+
+```{r}
+# Show accidents data distributed due to the time
+hour <- df[df$HOUR != 99,]$HOUR
+
+p_forms <- ggplot(data=df[df$HOUR != 99,], aes(x=df[df$HOUR != 99,]$HOUR)) +
+       geom_histogram(aes(y =..density.., fill=..count..),
+       breaks=seq(0, 23, by = 1)) +
+       labs(title="Histogram of hours when accidents happen") +
+       geom_density(col="brown4", adjust=1.5) +
+       labs(x="Hours", y="Number of accidents") +
+       xlim(0, 23)
+
+p_forms <- ggplotly(p = p_forms)
+p_forms
+
+plot(ecdf(hour), main = "ecdf(hours when accidents happen)", xlab = "Hours", ylab = "Probability densities")
+# Show normal distribution
+N <- length(hour)
+mu <- mean(hour)
+sd_hour <- sd(hour)
+x <- rnorm(N, mean=mu, sd=sd_hour)
+pts <- seq(-1,max(x),by=0.01)
+lines(pts, pnorm(pts, mean=mu, sd=sd_hour), col="red")
+# Show aproximately normal distribution
+fit.norm <- fitdist(hour, "norm")
+plot(fit.norm)
+```
+We can see that the biggest number of accidents happen after midnight, during the day it becomes to be close to normal distribution, with a little scewness to evening.
+What if most accidents after midnight happens because a driver was drunk. Let as create a hypothesis that more accidents after midnight happen with a drunk driver.
+As later as more drunk drivers accidents.
+
+```{r}
+# Show hour's distribution of accidents caused by drunk drivers
+df_drunk <- df[df$HOUR != 99,]
+df_drunk <- df_drunk[df_drunk$DRUNK_DR != 0,]
+
+p <- ggplot(data=df_drunk, aes(x=df_drunk$HOUR)) +
+       geom_histogram(aes(y =..density.., fill=..count..),
+       breaks=seq(0, 23, by = 1)) +
+       labs(title="Histogram of hours when accidents happen only with drunk drivers") +
+       geom_density(col="brown4", adjust=1.5) +
+       labs(x="Hours", y="Number of accidents") +
+       xlim(0, 23)
+p
+```
+From this histogram we can say that as it is leter, as more drunk drivers has accidents.
+What about day in a week when a majority of accidents happen.
+```{r}
+# Show data distribution over days per week
+day <- df$DAY_WEEK
+
+p <- ggplot(data=df, aes(x=df$DAY_WEEK)) +
+       geom_histogram(aes(y =..density.., fill=..count..),
+       breaks=seq(0, 7, by = 1)) +
+       labs(title="Histogram of hours when accidents happen") +
+       geom_density(col="brown4", adjust=3) +
+       labs(x="Hours", y="Number of accidents") +
+       xlim(0, 7)
+
+p <- ggplotly(p = p)
+p
+
+plot(ecdf(day), main = "ecdf(days when accidents happen)", xlab = "Days", ylab = "Probability densities")
+# Show normal distribution
+N <- length(day)
+mu <- mean(day)
+sd_hour <- sd(day)
+x <- rnorm(N, mean=mu, sd=sd_hour)
+pts <- seq(-1,max(x),by=0.01)
+lines(pts, pnorm(pts, mean=mu, sd=sd_hour), col="red")
+# Show aproximately normal distribution
+fit.norm <- fitdist(day, "norm")
+plot(fit.norm)
+```
+We can see that distribution of accidents during a week is aproximately normal with its cdf. Let us check what if we pay attention on drivers 
+```{r}
+# Show hour's distribution when accidents happen only with drunk drivers
+df_drunk <- df[df$DRUNK_DR != 0,]
+
+p <- ggplot(data=df_drunk, aes(x=df_drunk$DAY_WEEK)) +
+       geom_histogram(aes(y =..density.., fill=..count..),
+       breaks=seq(0, 7, by = 1)) +
+       labs(title="Histogram of hours when accidents happen only with drunk drivers") +
+       geom_density(col="brown4", adjust=1.5) +
+       labs(x="Hours", y="Number of accidents") +
+       xlim(0, 7)
+p
+```
+If we pay attention on drunk drivers then on the weekend we have much more accidents.
+**Solution:**
+The distribution of accidents happening is approximately equal everywhere, but analysing only drunk drivers, we found out, that in evening and on a weekend we have more accidents than it is usually.\n
+
+### Linear dependency between weight and price of a car
+I also would like to find out if there any corelation between weight of a car and it's price.
+```{r}
+# Read the data
+df2 <- read.csv("./VINDECODE.csv", header = TRUE)
+
+msrp_df <- df2[df2$MSRP != 0,]
+shipweight_df <- df2[df2$SHIPWEIGHT != 0,]
+
+# Show cars' prices
+plot(
+  x = msrp_df$MSRP,
+  col = "brown4",
+  xlab = "Cars' price",
+  ylab = "Number of cars with a particular price",
+  xlim = c(10000, 50000),
+  ylim = c(10000, 50000)
+)
+
+# Show cars' weights
+plot(
+  x = shipweight_df$SHIPWEIGHT,
+  col = "green",
+  xlab = "Cars' weight",
+  ylab = "Number of cars with a particular weight",
+  xlim = c(2000, 14000),
+  ylim = c(2000, 14000)
+)
+```
+We can just observe that we have enough data of cars' prices and weights, so we will try to find some dependence between them.
+```{r}
+# Show correlation between weight of a car and it's price
+mspr <- msrp_df[msrp_df$SHIPWEIGHT != 0,]$MSRP
+shipweight <- shipweight_df[shipweight_df$MSRP != 0,]$SHIPWEIGHT
+
+plot(
+  x = mspr,
+  y = shipweight[0:length(mspr)],
+  main = "Linear regression model",
+  xlab = "Cars' price",
+  ylab = "Cars' weight",
+  xlim = c(10000, 50000),
+  ylim = c(2000, 14000)
+)
+mspr_copy <- mspr
+weight_price_lm <- lm(shipweight~mspr_copy)
+abline(weight_price_lm, col = "red")
+```
+We can see that as higher price for a car, as bigger weight it has. So, our hypothesis is
+linear dependency between these two characteristics - price and weight. To test it, we need to select slots where we have both of these characteristics.
+```{r}
+# Show a summary of the model
+summary(weight_price_lm)
+```
+Using the data abouve we will decide which hypothesis to reject, in linear regression Null hypothesis is when coeficients equals to 0, Alternative is otherwise. \n
+We can consider a linear model to be statistically significant only when both these p-Values (< 2.2e-16) < statistical significance level (0.05).\n
+In our case, we have a significant one. \n
+From the above data we can say that the estimator of $\ a$ (intercept) is 1.531e+03; the estimator of $\ b$ (slope) is 8.123e-02, so we have the next equation y = 8.123e-02 + 1.531e+03* x.\n
+$R^2$ shows us the proportion of variation in the dependent variable that has been explained by this model, it is not the best in opur case, but still fine $R^2$ = 0.4154, as it bigger as better.\n
+We will investigate goodness of fit using Standart Error and F-statistics, as we can see Std.Error is quite small, close to zero, when F-statistic is 31890, what is a big number, this estimates tells us that the model if good fitted.\n
+So, knowing price or weight of a car we can aproximately, with confidence of $95\%$ estimate unknown paramether. What can save police officer in case he fogrot to write something down. \n
+```{r}
+# Show confidence and prediction regions of the model
+x <- mspr
+y <- shipweight
+
+new_data <- data.frame(x <- 30000)
+predicted.ci <- suppressWarnings(predict(weight_price_lm, newdata = new_data, interval = "confidence"))
+predicted.val <- suppressWarnings(predict(weight_price_lm, newdata = new_data, interval = "prediction"))
+
+x <- mspr
+# plot the points
+plot(
+  x = x,
+  y = y,
+  pch=16,
+  main = "Predicted and confidence region of the linear regression model",
+  xlab = "Cars' price",
+  ylab = "Cars' weight",
+  xlim = c(10000, 50000),
+  ylim = c(2000, 14000)
+)
+
+# add filled prediction region
+polygon(c(rev(x), x), c(rev(predicted.val[ ,3]), predicted.val[ ,2]), col = 'lightblue', border = NA)
+polygon(c(rev(x), x), c(rev(predicted.ci[ ,3]), predicted.ci[ ,2]), col = 'green', border = NA)
+
+# draw the border lines
+lines(x, predicted.val[ ,3],  col = 'lightblue')
+lines(x, predicted.val[ ,2],  col = 'lightblue')
+lines(x, predicted.ci[ ,3],  col = 'green')
+lines(x, predicted.ci[ ,2],  col = 'green')
+
+# add regression line atop
+abline(weight_price_lm, col="red", pch = 16)
+
+```
+### Trough years analysis
+
+Plots:
+1. 1975, 2. 2000, 3. 2018 years
+Pages of plots:
+1. Correlation between number of cars in accident and conditions around
+    * x = Number of cars involved in an accident
+    * y = Conditions around that infuenced an accident
+2. Histogram of hours when accidents happen only with drunk drivers
+    * x = Hours
+    * y = Number of accidents
+3. Histogram of hours when accidents happen only with drunk drivers
+    * x = Hours
+    * y = Number of accidents
+
+```{r}
+getPlots <- function(df) {
+  
+  # First plot
+  persons <- df[df$CF1 != 0,]
+  persons <- persons[persons$CF1 != 99,]
+  persons <- persons$PERSONS
+  cf1 <- df[df$CF1 != 0,]
+  cf1 <- cf1[cf1$CF1 != 99,]
+  cf1 <- cf1$CF1
+  p_condition <- plot_ly(x = persons,
+                         y = cf1)
+  
+  # Second plot
+  midnight <- df[df$HOUR != 99,]
+  df_drunk <- df[df$HOUR != 99,]
+  df_drunk <- df_drunk[df_drunk$DRUNK_DR != 0,]
+  p_drunk_hour <- ggplot(data=df_drunk, aes(x=df_drunk$HOUR)) +
+         geom_histogram(aes(y =..density.., fill=..count..),
+         breaks=seq(0, 23, by = 1)) +
+         geom_density(col="brown4", adjust=1.5) +
+         xlim(0, 23)
+  p_drunk_hour <- ggplotly(p = p_drunk_hour)
+  
+  # Third plot
+  df_drunk <- df[df$DRUNK_DR != 0,]
+  p_drunk_day <- ggplot(data=df_drunk, aes(x=df_drunk$DAY_WEEK)) +
+         geom_histogram(aes(y =..density.., fill=..count..),
+         breaks=seq(0, 7, by = 1)) +
+         geom_density(col="brown4", adjust=1.5) +
+         xlim(0, 7)
+  p_drunk_day <- ggplotly(p = p_drunk_day)
+  
+  lst <- list(p_condition, p_drunk_hour, p_drunk_day)
+  
+  return(lst)
+}
+df <- read.csv("./ACCIDENT1975.csv", header = TRUE)
+lst1 <- suppressWarnings(getPlots(df))
+df1 <- read.csv("./ACCIDENT2000.csv", header = TRUE)
+lst2 <- suppressWarnings(getPlots(df1))
+df2 <- read.csv("./ACCIDENT.csv", header = TRUE)
+lst3 <- suppressWarnings(getPlots(df2))
+
+p <- subplot(lst1[[1]], lst2[[1]], lst3[[1]], shareY = TRUE, margin = 0.04, heights = c(0.3, 0.3, 0.3), nrows = 3)
+suppressWarnings(p)
+p <- subplot(lst1[[2]], lst2[[2]], lst3[[2]], shareY = TRUE, margin = 0.04, heights = c(0.3, 0.3, 0.3), nrows = 3)
+p
+p <- subplot(lst1[[3]], lst2[[3]], lst3[[3]], shareY = TRUE, margin = 0.04, heights = c(0.3, 0.3, 0.3), nrows = 3)
+p
+```
+**Solution:**
+Comparing data over these three years, I would say that the situation didn't change a lot.\n
+About conditions that influence a driver's ride, now we have more accidents from one to five cars, in 1975 and 2000 there were more accidents involving from 1 to 10 cars.\n
+Distribution of accidents along days of week is almost the same evry year, it didn't change much.\n
+And according to the last detail, interesting that situation with accidents' distribution during a day have changed. In 1975 frequency of accidents' happening was almost linear during the whole day, when in 2000 in went down during working days. Now we observe a bit more accidents during the day than in 2000.\n
+I would explain it the next way, in 1975 people wasn't that busy at work, now we have big offices with a working time from 9am to 5pm, what makes people drive a car in the moring and in the evening. Later, in 2000, people became to work in an office. And now just a number of cars increased, so that a number of accidfents during the day increased as well.\n
+
+### Solution:
+We observed that the most often accidents happen involving only one car. Based on this facts we assumed several hypothesis.\n
+First of all, based on expirience of Ukrainian drivers, I wanted to find out if bigger part of accidents happen because of drunk drivers, but actually no.\n
+The distribution of accidents caused by sober and drunk drivers is almost the same.\n\n
+Next point I wanted to review is about external conditions that could influence a ride. I find out the most common conditions that do metter,\n
+and it turned out that again distribution of one car in an accident is almost the same as all other cars. The solution we have made is: because of external conditions usually we have accidents involving one car.\n
+After that we took a look at hours, when accidents happen. The most popular time of any accident is 00:00 - 1:00, after that we have a lot of accidents in the morning 6am and then during the day distribution of all accidents is close to normal with a little scewness to the evening. About a day of a week, we have aproximatrely normal distribution, but if we take a look only on drunk drivers, we have more accidents in evening and on a weekend.\n
+Afterwars, I assumed, what if a police officer forgot to write down weight or price of a car, how can he find it out, and actually we found out a linear dependence between weight and price of cars.\n\n
+At the very end, I desided to do a longitudinal research - to investigate how particular data has changed over years, so taking samples from 1975, 2000, 2018 years, I observed, that the situation with car accidents that happened because of some conditions around, distribution of accidents with drunk drivers were almost the same over these years.\n
+I can say, that American people live in stability and do not have big problems with drunk drivers, also we have noticed that americans became to be more busy working, what shows progress of the country.\n
